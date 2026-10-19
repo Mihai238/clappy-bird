@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#4ec0ca">
 <title>Tilt Bird</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     --sky: #4ec0ca;
@@ -51,9 +52,10 @@
   .panel h2 { font-size: 26px; }
   .panel p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
 
-  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .modes input { position: absolute; opacity: 0; pointer-events: none; }
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .modes input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
   .modes label {
+    position: relative;
     border: 2px solid var(--ink);
     border-radius: 10px;
     padding: 10px 8px;
@@ -64,9 +66,9 @@
     background: transparent;
   }
   .modes label small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .modes input:checked + label { background: var(--accent); }
-  .modes input:checked + label small { color: var(--accent-ink); }
-  .modes input:focus-visible + label { outline: 3px solid var(--ink); outline-offset: 2px; }
+  .modes label:has(input:checked) { background: var(--accent); }
+  .modes label:has(input:checked) small { color: var(--accent-ink); }
+  .modes label:has(input:focus-visible) { outline: 3px solid var(--ink); outline-offset: 2px; }
 
   .row { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
   .row input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
@@ -85,6 +87,7 @@
     cursor: pointer;
   }
   button:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+  button:disabled { opacity: 0.6; cursor: wait; transform: none; }
   button.secondary { background: transparent; box-shadow: none; font-size: 15px; padding: 8px; }
   button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 
@@ -105,15 +108,18 @@
 <div id="menu" class="panel">
   <h1>Tilt Bird</h1>
   <div class="modes" role="radiogroup" aria-label="Control mode">
-    <input type="radio" name="mode" id="mode-flick" value="flick">
-    <label for="mode-flick">Flick<small>jerk phone to flap</small></label>
-    <input type="radio" name="mode" id="mode-tilt" value="tilt">
-    <label for="mode-tilt">Tilt<small>steer up and down</small></label>
+    <label><input type="radio" name="mode" id="mode-flick" value="flick">Flick<small>jerk the phone</small></label>
+    <label><input type="radio" name="mode" id="mode-tilt" value="tilt">Tilt<small>steer up &amp; down</small></label>
+    <label><input type="radio" name="mode" id="mode-voice" value="voice">Voice<small>clap or shout</small></label>
   </div>
   <p id="mode-help"></p>
   <div class="row" id="row-sens">
     <label for="sens">Sensitivity</label>
     <input type="range" id="sens" min="1" max="10" step="1">
+  </div>
+  <div class="row" id="row-micsens">
+    <label for="micsens">Mic sensitivity</label>
+    <input type="range" id="micsens" min="1" max="10" step="1">
   </div>
   <div class="row" id="row-invert">
     <input type="checkbox" id="invert">
@@ -147,11 +153,14 @@
     mode: store.get('mode', 'flick'),
     sens: store.get('sens', 6),
     invert: store.get('invert', false),
+    micSens: store.get('micSens', 6),
   };
   let best = store.get('best', 0);
 
   // Linear acceleration (m/s², gravity removed) that counts as a flick.
   const flickThreshold = () => 22 - settings.sens * 1.6;
+  // Loudness (dBFS) that counts as a flap in Voice mode.
+  const micThreshold = () => -8 - settings.micSens * 4;
 
   // ---------- canvas ----------
   const W = 360;
@@ -259,12 +268,77 @@
     return clamp((d - Math.sign(d) * dead) / range, -1, 1);
   }
 
+  // ---------- microphone ----------
+  const mic = {
+    status: 'none',      // none | ok | denied | missing | insecure
+    ctx: null,
+    stream: null,
+    analyser: null,
+    buf: null,
+    level: -100,         // latest loudness in dBFS
+    armed: true,
+    lastClap: 0,
+  };
+
+  // Must be called straight from a user gesture so the audio context may start.
+  async function startMic() {
+    if (mic.stream) return 'ok';
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) return 'insecure';
+    const AC = window.AudioContext || window.webkitAudioContext;
+    mic.ctx = mic.ctx || new AC();
+    mic.ctx.resume().catch(() => {});
+    try {
+      // Raw signal: echo cancellation and auto gain would flatten the spikes we look for.
+      mic.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+    } catch (err) {
+      return err && err.name === 'NotFoundError' ? 'missing' : 'denied';
+    }
+    mic.analyser = mic.ctx.createAnalyser();
+    mic.analyser.fftSize = 1024;
+    mic.buf = new Float32Array(mic.analyser.fftSize);
+    mic.ctx.createMediaStreamSource(mic.stream).connect(mic.analyser);
+    mic.stream.getAudioTracks()[0]?.addEventListener('ended', stopMic);
+    return 'ok';
+  }
+
+  function stopMic() {
+    if (mic.stream) mic.stream.getTracks().forEach(tr => tr.stop());
+    mic.stream = null;
+    mic.analyser = null;
+    mic.level = -100;
+  }
+
+  function pollMic() {
+    if (!mic.analyser) return;
+    mic.analyser.getFloatTimeDomainData(mic.buf);
+    let sum = 0;
+    for (const v of mic.buf) sum += v * v;
+    mic.level = 10 * Math.log10(sum / mic.buf.length + 1e-10);
+    if (settings.mode !== 'voice') return;
+
+    // One sound = one flap: a held "aaah" has to die down before the next flap.
+    const thr = micThreshold();
+    const now = performance.now();
+    if (!mic.armed && mic.level < thr - 8) mic.armed = true;
+    if (mic.armed && mic.level > thr && now - mic.lastClap > 150) {
+      mic.armed = false;
+      mic.lastClap = now;
+      flap();
+    }
+  }
+
   let wakeLock = null;
   async function keepAwake() {
     try { if (!wakeLock && navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch {}
     if (wakeLock) wakeLock.addEventListener?.('release', () => { wakeLock = null; });
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state !== 'menu') keepAwake(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || state === 'menu') return;
+    keepAwake();
+    mic.ctx?.resume().catch(() => {});
+  });
 
   // ---------- game ----------
   const GRAVITY = 1500, FLAP_V = -430, MAX_FALL = 620;
@@ -308,7 +382,7 @@
   }
 
   function flap() {
-    if (state === 'ready' && settings.mode === 'flick') startPlay();
+    if (state === 'ready' && settings.mode !== 'tilt') startPlay();
     if (state !== 'play') return;
     bird.vy = FLAP_V;
     bird.wing = 1;
@@ -335,6 +409,7 @@
 
   function update(dt) {
     t += dt;
+    pollMic();
     flash = Math.max(0, flash - dt * 3);
     bird.wing = Math.max(0, bird.wing - dt * 5);
 
@@ -560,7 +635,9 @@
       outlinedText('that angle becomes level', W / 2, H * 0.58 + 24, 18);
     } else {
       outlinedText('Get ready', W / 2, H * 0.28, 40);
-      const hint = sensor.motionSeen ? 'Flick the phone to flap' : 'Tap to flap';
+      const voice = settings.mode === 'voice';
+      const live = voice ? mic.analyser : sensor.motionSeen;
+      const hint = !live ? 'Tap to flap' : voice ? 'Clap or shout to flap' : 'Flick the phone to flap';
       outlinedText(hint, W / 2, H * 0.58, 20);
     }
   }
@@ -573,16 +650,18 @@
     ctx.textBaseline = 'bottom';
     ctx.fillStyle = '#5a4a2a';
 
-    if (settings.mode === 'flick') {
-      if (!sensor.motionSeen) { ctx.fillText(noSensorText(), x, y + h); return; }
-      ctx.fillText('Motion', x, y - 4);
-      const max = 30;
+    if (settings.mode !== 'tilt') {
+      const voice = settings.mode === 'voice';
+      if (voice ? !mic.analyser : !sensor.motionSeen) { ctx.fillText(noSensorText(), x, y + h); return; }
+      ctx.fillText(voice ? 'Mic' : 'Motion', x, y - 4);
+      // Flick: 0–30 m/s². Voice: −60–0 dBFS.
+      const toBar = voice ? db => clamp((db + 60) / 60, 0, 1) : a => clamp(a / 30, 0, 1);
       ctx.fillStyle = 'rgba(43,29,14,0.15)';
       ctx.fillRect(x, y, w, h);
-      const spike = performance.now() - sensor.lastFlick < 150;
+      const spike = performance.now() - (voice ? mic.lastClap : sensor.lastFlick) < 150;
       ctx.fillStyle = spike ? '#f2711c' : '#f8d32b';
-      ctx.fillRect(x, y, w * clamp(sensor.signal / max, 0, 1), h);
-      const tx = x + w * (flickThreshold() / max);
+      ctx.fillRect(x, y, w * toBar(voice ? mic.level : sensor.signal), h);
+      const tx = x + w * toBar(voice ? micThreshold() : flickThreshold());
       ctx.fillStyle = '#2b1d0e';
       ctx.fillRect(tx - 1, y - 3, 2, h + 6);
     } else {
@@ -599,6 +678,12 @@
   }
 
   function noSensorText() {
+    if (settings.mode === 'voice') {
+      if (mic.status === 'insecure') return 'Microphone needs HTTPS. Tap to flap.';
+      if (mic.status === 'denied') return 'Microphone access blocked. Tap to flap.';
+      if (mic.status === 'missing') return 'No microphone found. Tap to flap.';
+      return 'Microphone stopped. Tap to flap.';
+    }
     if (sensor.status === 'insecure') return 'Sensors need HTTPS. Tap to flap.';
     if (sensor.status === 'denied') return 'Motion access blocked. Tap to flap.';
     return 'No motion sensor found. Tap to flap.';
@@ -622,19 +707,24 @@
   const helpEl = document.getElementById('mode-help');
   const sensEl = document.getElementById('sens');
   const invertEl = document.getElementById('invert');
+  const micSensEl = document.getElementById('micsens');
 
   const HELP = {
     flick: 'Give the phone a quick jerk to flap, like a tap. Gravity pulls the bird down between flicks.',
     tilt: 'Tilt the top of the phone up to climb and down to dive. You set what counts as level during the countdown.',
+    voice: 'Make a short, sharp sound to flap: a clap, a shouted "pah!" or a whistle. Each sound flaps once, so let it stop before the next.',
   };
 
   function syncMenu() {
+    if (!HELP[settings.mode]) settings.mode = 'flick';
     document.getElementById('mode-' + settings.mode).checked = true;
     helpEl.textContent = HELP[settings.mode];
     document.getElementById('row-sens').hidden = settings.mode !== 'flick';
     document.getElementById('row-invert').hidden = settings.mode !== 'tilt';
+    document.getElementById('row-micsens').hidden = settings.mode !== 'voice';
     sensEl.value = settings.sens;
     invertEl.checked = settings.invert;
+    micSensEl.value = settings.micSens;
   }
   syncMenu();
 
@@ -645,12 +735,27 @@
   }));
   sensEl.addEventListener('input', () => { settings.sens = +sensEl.value; store.set('sens', settings.sens); });
   invertEl.addEventListener('change', () => { settings.invert = invertEl.checked; store.set('invert', settings.invert); });
+  micSensEl.addEventListener('input', () => { settings.micSens = +micSensEl.value; store.set('micSens', settings.micSens); });
 
-  document.getElementById('start').addEventListener('click', async () => {
-    sensor.status = await requestSensors();
-    statusEl.textContent =
-      sensor.status === 'insecure' ? 'Open this page over https:// to use motion. Tap works meanwhile.' :
-      sensor.status === 'denied' ? 'Motion access was blocked. Reload the page and choose Allow.' : '';
+  const startEl = document.getElementById('start');
+  startEl.addEventListener('click', async () => {
+    // The permission prompt can sit unanswered; block repeat requests and say what we wait for.
+    startEl.disabled = true;
+    if (settings.mode === 'voice') {
+      statusEl.textContent = 'Allow microphone access to play with your voice.';
+      mic.status = await startMic();
+      statusEl.textContent =
+        mic.status === 'insecure' ? 'Open this page over https:// to use the microphone. Tap works meanwhile.' :
+        mic.status === 'denied' ? "Microphone access was blocked. Allow it in your browser's site settings, then tap Start." :
+        mic.status === 'missing' ? 'No microphone found. Tap works meanwhile.' : '';
+    } else {
+      stopMic();
+      sensor.status = await requestSensors();
+      statusEl.textContent =
+        sensor.status === 'insecure' ? 'Open this page over https:// to use motion. Tap works meanwhile.' :
+        sensor.status === 'denied' ? 'Motion access was blocked. Reload the page and choose Allow.' : '';
+    }
+    startEl.disabled = false;
     newRun();
   });
 
@@ -665,6 +770,7 @@
     overEl.hidden = true;
     menuEl.hidden = false;
     state = 'menu';
+    stopMic();
     pipes = [];
     syncMenu();
   });

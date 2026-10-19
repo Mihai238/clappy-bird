@@ -8,6 +8,7 @@ Flappy Bird played by moving your phone instead of tapping.
 
 - **Flick:** jerk the phone to flap. Use the sensitivity slider if one flick gives two flaps, or none.
 - **Tilt:** tilt the top of the phone up to climb and down to dive. The countdown takes your current angle as level.
+- **Voice:** clap, shout "pah!" or whistle to flap. Each sound flaps once. Use the mic sensitivity slider if background noise sets it off.
 
 Lock screen rotation in portrait. Tap or Space also flaps, and the arrow keys steer in Tilt mode, so it works on a computer too.
 
