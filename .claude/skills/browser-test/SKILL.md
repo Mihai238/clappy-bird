@@ -13,19 +13,22 @@ Every chrome-devtools action returns a full page snapshot, so testing in the mai
 
 ## Server
 
-`serve.py` uses a self-signed certificate, which the browser rejects. For desktop testing serve over plain HTTP, bound to localhost so `.cert/` isn't exposed to the LAN:
+The game is TypeScript, so it needs Vite to serve it; a plain static server can't. `npm run phone` uses a self-signed certificate, which the browser rejects, so for desktop testing use the plain-HTTP dev server bound to localhost:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/ --max-time 3
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5173/ --max-time 3
 ```
 
-`000` means nothing is running: start `python3 -m http.server 8000 --bind 127.0.0.1` from the repo root with `run_in_background`. If something already answers, it belongs to the user or another session: reuse it, never kill or restart it. Stop only a server you started.
+`000` means nothing is running: start `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort` from the repo root with `run_in_background` (run `npm install` first if `node_modules/` is missing). If something already answers, it belongs to the user or another session: reuse it, never kill or restart it. Stop only a server you started.
 
-Open `http://127.0.0.1:8000/index.html`. Before reusing an open tab, check its URL in `list_pages`.
+Open `http://127.0.0.1:5173/`. Before reusing an open tab, check its URL in `list_pages`.
+
+To check the production build instead (what GitHub Pages serves), run `npm run build`, then `npx vite preview --host 127.0.0.1 --port 4173 --strictPort` and open `http://127.0.0.1:4173/`.
 
 ## Driving the game
 
-- The menu is HTML (mode radios `input[name=mode]`, sensitivity slider, invert checkbox, `#start`). Act on `take_snapshot` uids.
+- The menu is HTML (mode radios `input[name=mode]`, sensitivity sliders, invert checkbox, `#start`). Act on `take_snapshot` uids.
+- Voice mode asks for the microphone, and an unanswered prompt leaves Start disabled. To test past it, fake `navigator.mediaDevices.getUserMedia` with `evaluate_script` (resolve with an oscillator's `MediaStream` to grant, reject with a `NotAllowedError` to deny) before clicking Start.
 - Gameplay is a `<canvas>`, so there is nothing to snapshot. Use `press_key` (Space to flap, ArrowUp/ArrowDown to steer in Tilt mode) and `take_screenshot` to see the result.
 - Settings persist in `localStorage` under `tiltbird.*`. A "wrong" default is often a leftover setting, so clear those keys and reload before concluding.
 - Wait on conditions (`wait_for` on expected text, or `evaluate_script` polling), never fixed sleeps.
@@ -36,6 +39,6 @@ Every flow: the expected screen renders, `list_console_messages` is clean, and n
 
 Report a change as working only because the browser showed it, never because the code looks right.
 
-## Motion controls
+## Motion controls and the microphone
 
-A desktop browser fires no `devicemotion`/`deviceorientation` events, so flick and tilt can't be verified here. Say so in the report, and ask the user to try it on a phone with `python3 serve.py`.
+A desktop browser fires no `devicemotion`/`deviceorientation` events, so flick and tilt can't be verified here, and a faked microphone proves the wiring but not how real sounds trigger. Say so in the report, and ask the user to try it on a phone with `npm run phone`.
