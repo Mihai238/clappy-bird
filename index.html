@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#4ec0ca">
+<title>Tilt Bird</title>
+<style>
+  :root {
+    --sky: #4ec0ca;
+    --ink: #2b1d0e;
+    --paper: #fdf6e3;
+    --accent: #f5a623;
+    --accent-ink: #5a3200;
+    --muted: #7a6a55;
+    --font: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--sky);
+    color: var(--ink);
+    font-family: var(--font);
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    display: grid;
+    place-items: center;
+  }
+  canvas { display: block; }
+
+  .panel {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(340px, calc(100vw - 32px));
+    box-sizing: border-box;
+    background: var(--paper);
+    border: 3px solid var(--ink);
+    border-radius: 14px;
+    box-shadow: 0 6px 0 var(--ink);
+    padding: 20px;
+    display: grid;
+    gap: 14px;
+    touch-action: manipulation;
+  }
+  .panel h1, .panel h2 { margin: 0; text-align: center; line-height: 1.1; }
+  .panel h1 { font-size: 34px; letter-spacing: 0.5px; }
+  .panel h2 { font-size: 26px; }
+  .panel p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
+
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .modes input { position: absolute; opacity: 0; pointer-events: none; }
+  .modes label {
+    border: 2px solid var(--ink);
+    border-radius: 10px;
+    padding: 10px 8px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 16px;
+    cursor: pointer;
+    background: transparent;
+  }
+  .modes label small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .modes input:checked + label { background: var(--accent); }
+  .modes input:checked + label small { color: var(--accent-ink); }
+  .modes input:focus-visible + label { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+  .row { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
+  .row input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .row input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
+
+  button {
+    font: inherit;
+    font-size: 18px;
+    font-weight: 800;
+    padding: 12px;
+    border: 3px solid var(--ink);
+    border-radius: 10px;
+    background: var(--accent);
+    color: var(--ink);
+    box-shadow: 0 4px 0 var(--ink);
+    cursor: pointer;
+  }
+  button:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+  button.secondary { background: transparent; box-shadow: none; font-size: 15px; padding: 8px; }
+  button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+  .status { font-size: 13px; color: #b3261e; text-align: center; min-height: 0; }
+  .status:empty { display: none; }
+
+  .scores { display: grid; grid-template-columns: 1fr 1fr; text-align: center; }
+  .scores span { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  .scores strong { font-size: 32px; font-variant-numeric: tabular-nums; }
+  .actions { display: grid; gap: 8px; }
+
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="menu" class="panel">
+  <h1>Tilt Bird</h1>
+  <div class="modes" role="radiogroup" aria-label="Control mode">
+    <input type="radio" name="mode" id="mode-flick" value="flick">
+    <label for="mode-flick">Flick<small>jerk phone to flap</small></label>
+    <input type="radio" name="mode" id="mode-tilt" value="tilt">
+    <label for="mode-tilt">Tilt<small>steer up and down</small></label>
+  </div>
+  <p id="mode-help"></p>
+  <div class="row" id="row-sens">
+    <label for="sens">Sensitivity</label>
+    <input type="range" id="sens" min="1" max="10" step="1">
+  </div>
+  <div class="row" id="row-invert">
+    <input type="checkbox" id="invert">
+    <label for="invert">Invert tilt</label>
+  </div>
+  <button id="start">Start</button>
+  <div class="status" id="status"></div>
+  <p>Lock screen rotation in portrait. Tap or Space also flaps; on a computer, use the arrow keys in Tilt mode.</p>
+</div>
+
+<div id="over" class="panel" hidden>
+  <h2>Game over</h2>
+  <div class="scores">
+    <div><span>Score</span><strong id="final-score">0</strong></div>
+    <div><span>Best</span><strong id="best-score">0</strong></div>
+  </div>
+  <div class="actions">
+    <button id="again">Play again</button>
+    <button id="settings" class="secondary">Change controls</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---------- settings ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('tiltbird.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('tiltbird.' + k, JSON.stringify(v)); } catch {} },
+  };
+  const settings = {
+    mode: store.get('mode', 'flick'),
+    sens: store.get('sens', 6),
+    invert: store.get('invert', false),
+  };
+  let best = store.get('best', 0);
+
+  // Linear acceleration (m/s², gravity removed) that counts as a flick.
+  const flickThreshold = () => 22 - settings.sens * 1.6;
+
+  // ---------- canvas ----------
+  const W = 360;
+  let H = 640, groundY = 550;
+  const cvs = document.getElementById('game');
+  const ctx = cvs.getContext('2d');
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const cw = window.innerWidth, ch = window.innerHeight;
+    H = Math.max(480, Math.min(Math.round(W * ch / cw), 900));
+    const scale = Math.min(cw / W, ch / H);
+    cvs.style.width = W * scale + 'px';
+    cvs.style.height = H * scale + 'px';
+    cvs.width = Math.round(W * scale * dpr);
+    cvs.height = Math.round(H * scale * dpr);
+    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+    groundY = H - 90;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- sensors ----------
+  const sensor = {
+    status: 'none',      // none | ok | denied | insecure
+    motionSeen: false,
+    orientSeen: false,
+    signal: 0,           // latest linear acceleration magnitude
+    beta: null,          // front/back tilt in degrees
+    grav: 9.81,          // running estimate when only accelerationIncludingGravity exists
+    armed: true,
+    lastFlick: 0,
+  };
+  let listening = false;
+
+  // Must be called straight from a user gesture: iOS only shows the prompt then.
+  async function requestSensors() {
+    if (!window.isSecureContext) return 'insecure';
+    const asks = [];
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      asks.push(DeviceMotionEvent.requestPermission());
+    }
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      asks.push(DeviceOrientationEvent.requestPermission());
+    }
+    try {
+      const results = await Promise.all(asks);
+      if (results.some(r => r !== 'granted')) return 'denied';
+    } catch {
+      return 'denied';
+    }
+    if (!listening) {
+      window.addEventListener('devicemotion', onMotion);
+      window.addEventListener('deviceorientation', onOrient);
+      listening = true;
+    }
+    return 'ok';
+  }
+
+  function onMotion(e) {
+    let mag;
+    const a = e.acceleration;
+    if (a && a.x != null) {
+      mag = Math.hypot(a.x, a.y, a.z);
+    } else {
+      // No gravity-free reading: high-pass the total magnitude instead.
+      const g = e.accelerationIncludingGravity;
+      if (!g || g.x == null) return;
+      const m = Math.hypot(g.x, g.y, g.z);
+      sensor.grav += (m - sensor.grav) * 0.08;
+      mag = Math.abs(m - sensor.grav);
+    }
+    sensor.motionSeen = true;
+    sensor.signal = mag;
+    if (settings.mode !== 'flick') return;
+
+    // One flick = one flap. The stop at the end of a flick makes a second spike,
+    // so wait for the signal to settle and enforce a short cooldown.
+    const thr = flickThreshold();
+    const now = performance.now();
+    if (!sensor.armed && mag < thr * 0.45 && now - sensor.lastFlick > 120) sensor.armed = true;
+    if (sensor.armed && mag > thr && now - sensor.lastFlick > 300) {
+      sensor.armed = false;
+      sensor.lastFlick = now;
+      flap();
+    }
+  }
+
+  function onOrient(e) {
+    if (e.beta == null) return;
+    sensor.orientSeen = true;
+    sensor.beta = e.beta;
+  }
+
+  // -1..1, positive means climb.
+  let neutral = null;
+  function tiltAmount() {
+    if (keys.up) return 1;
+    if (keys.down) return -1;
+    if (sensor.beta == null || neutral == null) return 0;
+    let d = sensor.beta - neutral;
+    if (settings.invert) d = -d;
+    const dead = 3, range = 22;
+    if (Math.abs(d) < dead) return 0;
+    return clamp((d - Math.sign(d) * dead) / range, -1, 1);
+  }
+
+  let wakeLock = null;
+  async function keepAwake() {
+    try { if (!wakeLock && navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+    if (wakeLock) wakeLock.addEventListener?.('release', () => { wakeLock = null; });
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state !== 'menu') keepAwake(); });
+
+  // ---------- game ----------
+  const GRAVITY = 1500, FLAP_V = -430, MAX_FALL = 620;
+  const SPEED = 140, GAP = 158, PIPE_W = 62, SPACING = 215;
+  const TILT_V = 380;
+
+  const bird = { x: 92, y: 300, vy: 0, r: 13, rot: 0, wing: 0 };
+  let pipes = [];
+  let score = 0;
+  let state = 'menu';   // menu | ready | play | dying | over
+  let readyT = 0;
+  let betaSamples = [];
+  let groundX = 0, cloudX = 0, t = 0;
+  let flash = 0, overTimer = 0;
+  const keys = { up: false, down: false };
+
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  function newRun() {
+    bird.y = H * 0.42;
+    bird.vy = 0;
+    bird.rot = 0;
+    pipes = [];
+    score = 0;
+    flash = 0;
+    betaSamples = [];
+    readyT = settings.mode === 'tilt' ? 2 : 0;
+    state = 'ready';
+    overEl.hidden = true;
+    menuEl.hidden = true;
+    keepAwake();
+  }
+
+  function spawnPipe(x) {
+    const margin = 64;
+    const span = groundY - GAP - margin * 2;
+    let top = margin + Math.random() * span;
+    const prev = pipes[pipes.length - 1];
+    if (prev) top = clamp(top, prev.top - 170, prev.top + 170);
+    pipes.push({ x, top, passed: false });
+  }
+
+  function flap() {
+    if (state === 'ready' && settings.mode === 'flick') startPlay();
+    if (state !== 'play') return;
+    bird.vy = FLAP_V;
+    bird.wing = 1;
+  }
+
+  function startPlay() {
+    state = 'play';
+    spawnPipe(W + 60);
+  }
+
+  function die() {
+    if (state !== 'play') return;
+    state = 'dying';
+    flash = 1;
+    overTimer = 0.7;
+    if (navigator.vibrate) navigator.vibrate(60);
+    if (score > best) { best = score; store.set('best', best); }
+  }
+
+  function circleHitsRect(cx, cy, r, x, y, w, h) {
+    const nx = clamp(cx, x, x + w), ny = clamp(cy, y, y + h);
+    return (cx - nx) ** 2 + (cy - ny) ** 2 < r * r;
+  }
+
+  function update(dt) {
+    t += dt;
+    flash = Math.max(0, flash - dt * 3);
+    bird.wing = Math.max(0, bird.wing - dt * 5);
+
+    if (state === 'ready' || state === 'play' || state === 'menu') {
+      groundX = (groundX + SPEED * dt) % 24;
+      cloudX = (cloudX + SPEED * 0.15 * dt) % (W + 200);
+    }
+
+    if (state === 'menu' || state === 'ready') {
+      bird.y = H * 0.42 + Math.sin(t * 5) * 6;
+      bird.rot = 0;
+      if (state === 'ready' && settings.mode === 'tilt') {
+        // Average the phone's angle during the countdown and treat it as level.
+        if (sensor.beta != null) betaSamples.push(sensor.beta);
+        readyT -= dt;
+        if (readyT <= 0) {
+          const recent = betaSamples.slice(-30);
+          neutral = recent.length ? recent.reduce((s, b) => s + b, 0) / recent.length : null;
+          startPlay();
+        }
+      }
+      return;
+    }
+
+    if (state === 'play') {
+      if (settings.mode === 'tilt') {
+        const target = -tiltAmount() * TILT_V;
+        bird.vy += (target - bird.vy) * Math.min(1, dt * 5);
+        bird.rot = clamp(bird.vy / 700, -0.5, 0.6);
+      } else {
+        bird.vy = Math.min(bird.vy + GRAVITY * dt, MAX_FALL);
+        bird.rot = clamp(bird.vy / 600, -0.45, 1.3);
+      }
+      bird.y += bird.vy * dt;
+      if (bird.y < bird.r) { bird.y = bird.r; bird.vy = Math.max(0, bird.vy); }
+
+      for (const p of pipes) p.x -= SPEED * dt;
+      if (pipes.length && pipes[0].x < -PIPE_W) pipes.shift();
+      const last = pipes[pipes.length - 1];
+      if (last && last.x < W + 60 - SPACING) spawnPipe(last.x + SPACING);
+
+      for (const p of pipes) {
+        if (!p.passed && p.x + PIPE_W < bird.x) { p.passed = true; score++; }
+        if (circleHitsRect(bird.x, bird.y, bird.r - 2, p.x, 0, PIPE_W, p.top) ||
+            circleHitsRect(bird.x, bird.y, bird.r - 2, p.x, p.top + GAP, PIPE_W, groundY - p.top - GAP)) {
+          die();
+          break;
+        }
+      }
+      if (bird.y + bird.r >= groundY) { bird.y = groundY - bird.r; die(); }
+      return;
+    }
+
+    if (state === 'dying') {
+      if (bird.y + bird.r < groundY) {
+        bird.vy = Math.min(bird.vy + GRAVITY * dt, MAX_FALL);
+        bird.y = Math.min(bird.y + bird.vy * dt, groundY - bird.r);
+        bird.rot = Math.min(bird.rot + dt * 6, 1.5);
+      }
+      overTimer -= dt;
+      if (overTimer <= 0) showOver();
+    }
+  }
+
+  // ---------- drawing ----------
+  function draw() {
+    const sky = ctx.createLinearGradient(0, 0, 0, groundY);
+    sky.addColorStop(0, '#4ec0ca');
+    sky.addColorStop(1, '#a6e3e9');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    drawClouds();
+    drawSkyline();
+    for (const p of pipes) drawPipe(p);
+    drawGround();
+    drawBird();
+
+    if (state === 'play' || state === 'ready' || state === 'dying') drawScore();
+    if (state === 'ready') drawReady();
+    if (state !== 'menu') drawMeter();
+
+    if (flash > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${flash * 0.8})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function drawClouds() {
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    const puffs = [[40, 90, 1], [230, 150, 0.8], [140, 230, 0.65], [320, 60, 0.9]];
+    for (const [x0, y, s] of puffs) {
+      const x = ((x0 - cloudX * s) % (W + 200) + W + 200) % (W + 200) - 100;
+      ctx.beginPath();
+      ctx.arc(x, y, 18 * s, 0, Math.PI * 2);
+      ctx.arc(x + 20 * s, y - 8 * s, 22 * s, 0, Math.PI * 2);
+      ctx.arc(x + 42 * s, y, 16 * s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawSkyline() {
+    ctx.fillStyle = '#8fd3a0';
+    const base = groundY;
+    ctx.beginPath();
+    ctx.moveTo(0, base);
+    for (let x = 0; x <= W; x += 30) {
+      const h = 30 + ((x * 37) % 50);
+      ctx.lineTo(x, base - h);
+      ctx.lineTo(x + 30, base - h);
+    }
+    ctx.lineTo(W, base);
+    ctx.fill();
+  }
+
+  function drawPipe(p) {
+    const lip = 22, over = 5;
+    const body = '#74bf2e', dark = '#4f8a1c', light = '#a3e05a';
+    const parts = [
+      { y: 0, h: p.top, lipY: p.top - lip },
+      { y: p.top + GAP, h: groundY - p.top - GAP, lipY: p.top + GAP },
+    ];
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#2b1d0e';
+    for (const s of parts) {
+      ctx.fillStyle = body;
+      ctx.fillRect(p.x, s.y, PIPE_W, s.h);
+      ctx.fillStyle = light;
+      ctx.fillRect(p.x + 6, s.y, 8, s.h);
+      ctx.fillStyle = dark;
+      ctx.fillRect(p.x + PIPE_W - 12, s.y, 8, s.h);
+      ctx.strokeRect(p.x, s.y, PIPE_W, s.h);
+
+      ctx.fillStyle = body;
+      ctx.fillRect(p.x - over, s.lipY, PIPE_W + over * 2, lip);
+      ctx.fillStyle = light;
+      ctx.fillRect(p.x - over + 6, s.lipY, 8, lip);
+      ctx.strokeRect(p.x - over, s.lipY, PIPE_W + over * 2, lip);
+    }
+  }
+
+  function drawGround() {
+    ctx.fillStyle = '#ded895';
+    ctx.fillRect(0, groundY, W, H - groundY);
+    ctx.fillStyle = '#73bf2e';
+    ctx.fillRect(0, groundY, W, 14);
+    ctx.fillStyle = '#5ea024';
+    for (let x = -groundX; x < W; x += 24) {
+      ctx.beginPath();
+      ctx.moveTo(x, groundY + 14);
+      ctx.lineTo(x + 12, groundY);
+      ctx.lineTo(x + 20, groundY);
+      ctx.lineTo(x + 8, groundY + 14);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#2b1d0e';
+    ctx.fillRect(0, groundY, W, 2.5);
+    ctx.fillRect(0, groundY + 14, W, 2);
+  }
+
+  function drawBird() {
+    ctx.save();
+    ctx.translate(bird.x, bird.y);
+    ctx.rotate(bird.rot);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#2b1d0e';
+
+    ctx.fillStyle = '#f8d32b';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 17, 13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    const wingY = bird.wing > 0 ? -6 : (Math.sin(t * 14) > 0 && state !== 'dying' ? 2 : 4);
+    ctx.fillStyle = '#fff3c4';
+    ctx.beginPath();
+    ctx.ellipse(-6, wingY, 8, 5.5, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(7, -5, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#2b1d0e';
+    ctx.beginPath();
+    ctx.arc(8.5, -5, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#f2711c';
+    ctx.beginPath();
+    ctx.moveTo(10, 1);
+    ctx.lineTo(22, 4);
+    ctx.lineTo(10, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function outlinedText(text, x, y, size) {
+    ctx.font = `900 ${size}px ui-rounded, "SF Pro Rounded", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = size / 6;
+    ctx.strokeStyle = '#2b1d0e';
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, x, y);
+  }
+
+  function drawScore() {
+    outlinedText(String(score), W / 2, 70, 52);
+  }
+
+  function drawReady() {
+    if (settings.mode === 'tilt') {
+      const n = Math.ceil(readyT);
+      outlinedText(n > 0 ? String(n) : 'Go', W / 2, H * 0.28, 44);
+      outlinedText('Hold the phone how you like', W / 2, H * 0.58, 18);
+      outlinedText('that angle becomes level', W / 2, H * 0.58 + 24, 18);
+    } else {
+      outlinedText('Get ready', W / 2, H * 0.28, 40);
+      const hint = sensor.motionSeen ? 'Flick the phone to flap' : 'Tap to flap';
+      outlinedText(hint, W / 2, H * 0.58, 20);
+    }
+  }
+
+  // Live sensor readout on the ground strip, so you can see what the game sees.
+  function drawMeter() {
+    const x = 20, w = W - 40, y = groundY + 40, h = 12;
+    ctx.font = '700 12px ui-rounded, system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = '#5a4a2a';
+
+    if (settings.mode === 'flick') {
+      if (!sensor.motionSeen) { ctx.fillText(noSensorText(), x, y + h); return; }
+      ctx.fillText('Motion', x, y - 4);
+      const max = 30;
+      ctx.fillStyle = 'rgba(43,29,14,0.15)';
+      ctx.fillRect(x, y, w, h);
+      const spike = performance.now() - sensor.lastFlick < 150;
+      ctx.fillStyle = spike ? '#f2711c' : '#f8d32b';
+      ctx.fillRect(x, y, w * clamp(sensor.signal / max, 0, 1), h);
+      const tx = x + w * (flickThreshold() / max);
+      ctx.fillStyle = '#2b1d0e';
+      ctx.fillRect(tx - 1, y - 3, 2, h + 6);
+    } else {
+      if (!sensor.orientSeen && !keys.up && !keys.down) { ctx.fillText(noSensorText(), x, y + h); return; }
+      ctx.fillText('Tilt', x, y - 4);
+      ctx.fillStyle = 'rgba(43,29,14,0.15)';
+      ctx.fillRect(x, y, w, h);
+      const mid = x + w / 2, v = state === 'play' ? tiltAmount() : 0;
+      ctx.fillStyle = v >= 0 ? '#74bf2e' : '#f2711c';
+      ctx.fillRect(Math.min(mid, mid + v * w / 2), y, Math.abs(v) * w / 2, h);
+      ctx.fillStyle = '#2b1d0e';
+      ctx.fillRect(mid - 1, y - 3, 2, h + 6);
+    }
+  }
+
+  function noSensorText() {
+    if (sensor.status === 'insecure') return 'Sensors need HTTPS. Tap to flap.';
+    if (sensor.status === 'denied') return 'Motion access blocked. Tap to flap.';
+    return 'No motion sensor found. Tap to flap.';
+  }
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 1 / 20);
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- UI ----------
+  const menuEl = document.getElementById('menu');
+  const overEl = document.getElementById('over');
+  const statusEl = document.getElementById('status');
+  const helpEl = document.getElementById('mode-help');
+  const sensEl = document.getElementById('sens');
+  const invertEl = document.getElementById('invert');
+
+  const HELP = {
+    flick: 'Give the phone a quick jerk to flap, like a tap. Gravity pulls the bird down between flicks.',
+    tilt: 'Tilt the top of the phone up to climb and down to dive. You set what counts as level during the countdown.',
+  };
+
+  function syncMenu() {
+    document.getElementById('mode-' + settings.mode).checked = true;
+    helpEl.textContent = HELP[settings.mode];
+    document.getElementById('row-sens').hidden = settings.mode !== 'flick';
+    document.getElementById('row-invert').hidden = settings.mode !== 'tilt';
+    sensEl.value = settings.sens;
+    invertEl.checked = settings.invert;
+  }
+  syncMenu();
+
+  document.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', () => {
+    settings.mode = r.value;
+    store.set('mode', settings.mode);
+    syncMenu();
+  }));
+  sensEl.addEventListener('input', () => { settings.sens = +sensEl.value; store.set('sens', settings.sens); });
+  invertEl.addEventListener('change', () => { settings.invert = invertEl.checked; store.set('invert', settings.invert); });
+
+  document.getElementById('start').addEventListener('click', async () => {
+    sensor.status = await requestSensors();
+    statusEl.textContent =
+      sensor.status === 'insecure' ? 'Open this page over https:// to use motion. Tap works meanwhile.' :
+      sensor.status === 'denied' ? 'Motion access was blocked. Reload the page and choose Allow.' : '';
+    newRun();
+  });
+
+  function showOver() {
+    state = 'over';
+    document.getElementById('final-score').textContent = score;
+    document.getElementById('best-score').textContent = best;
+    overEl.hidden = false;
+  }
+  document.getElementById('again').addEventListener('click', newRun);
+  document.getElementById('settings').addEventListener('click', () => {
+    overEl.hidden = true;
+    menuEl.hidden = false;
+    state = 'menu';
+    pipes = [];
+    syncMenu();
+  });
+
+  cvs.addEventListener('pointerdown', e => { e.preventDefault(); flap(); });
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') { if (!menuEl.hidden || !overEl.hidden) return; e.preventDefault(); flap(); }
+    if (e.code === 'ArrowUp') { keys.up = true; e.preventDefault(); }
+    if (e.code === 'ArrowDown') { keys.down = true; e.preventDefault(); }
+  });
+  window.addEventListener('keyup', e => {
+    if (e.code === 'ArrowUp') keys.up = false;
+    if (e.code === 'ArrowDown') keys.down = false;
+  });
+})();
+</script>
+</body>
+</html>
