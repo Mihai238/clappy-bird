@@ -1,14 +1,9 @@
-import type { Mode } from './game.ts';
-
 export interface Settings {
-  mode: Mode;
-  sens: number;
-  invert: boolean;
   micSens: number;
 }
 
+// The game's old name, kept so players don't lose their best score.
 const PREFIX = 'tiltbird.';
-const MODES: readonly Mode[] = ['flick', 'tilt', 'voice'];
 
 // Storage can throw in private windows or with blocked site data; the game must still run.
 function load(key: string): unknown {
@@ -27,12 +22,8 @@ function save(key: string, value: unknown): void {
 }
 
 const num = (v: unknown, fallback: number): number => (typeof v === 'number' ? v : fallback);
-const savedMode = load('mode');
 
 export const settings: Settings = {
-  mode: MODES.includes(savedMode as Mode) ? (savedMode as Mode) : 'flick',
-  sens: num(load('sens'), 6),
-  invert: load('invert') === true,
   micSens: num(load('micSens'), 6),
 };
 

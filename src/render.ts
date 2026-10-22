@@ -1,13 +1,11 @@
-import { WIDTH, type Game, type Mode, type Pipe } from './game.ts';
+import { WIDTH, type Game, type Pipe } from './game.ts';
 import { GAP, PIPE_W } from './logic/physics.ts';
 
 export type Meter =
   | { kind: 'level'; label: string; level: number; threshold: number; hot: boolean }
-  | { kind: 'tilt'; value: number }
   | { kind: 'message'; text: string };
 
 export interface Hud {
-  mode: Mode;
   readyHint: string;
   meter: Meter;
 }
@@ -33,7 +31,7 @@ export class Renderer {
     this.drawBird(game);
 
     if (game.state === 'play' || game.state === 'ready' || game.state === 'dying') this.outlinedText(String(game.score), WIDTH / 2, 70, 52);
-    if (game.state === 'ready') this.drawReady(game, hud);
+    if (game.state === 'ready') this.drawReady(game.height, hud.readyHint);
     if (game.state !== 'menu') this.drawMeter(game.groundY, hud.meter);
 
     if (game.flash > 0) {
@@ -175,20 +173,12 @@ export class Renderer {
     ctx.fillText(text, x, y);
   }
 
-  private drawReady(game: Game, hud: Hud): void {
-    const H = game.height;
-    if (hud.mode === 'tilt') {
-      const n = Math.ceil(game.readyT);
-      this.outlinedText(n > 0 ? String(n) : 'Go', WIDTH / 2, H * 0.28, 44);
-      this.outlinedText('Hold the phone how you like', WIDTH / 2, H * 0.58, 18);
-      this.outlinedText('that angle becomes level', WIDTH / 2, H * 0.58 + 24, 18);
-    } else {
-      this.outlinedText('Get ready', WIDTH / 2, H * 0.28, 40);
-      this.outlinedText(hud.readyHint, WIDTH / 2, H * 0.58, 20);
-    }
+  private drawReady(height: number, hint: string): void {
+    this.outlinedText('Get ready', WIDTH / 2, height * 0.28, 40);
+    this.outlinedText(hint, WIDTH / 2, height * 0.58, 20);
   }
 
-  // Live sensor readout on the ground strip, so you can see what the game sees.
+  // Live mic readout on the ground strip, so you can see what the game sees.
   private drawMeter(groundY: number, meter: Meter): void {
     const { ctx } = this;
     const x = 20, w = WIDTH - 40, y = groundY + 40, h = 12;
@@ -202,21 +192,13 @@ export class Renderer {
       return;
     }
 
-    ctx.fillText(meter.kind === 'tilt' ? 'Tilt' : meter.label, x, y - 4);
+    ctx.fillText(meter.label, x, y - 4);
     ctx.fillStyle = 'rgba(43,29,14,0.15)';
     ctx.fillRect(x, y, w, h);
 
-    let tick: number;
-    if (meter.kind === 'level') {
-      ctx.fillStyle = meter.hot ? '#f2711c' : '#f8d32b';
-      ctx.fillRect(x, y, w * meter.level, h);
-      tick = x + w * meter.threshold;
-    } else {
-      const mid = x + w / 2;
-      ctx.fillStyle = meter.value >= 0 ? '#74bf2e' : '#f2711c';
-      ctx.fillRect(Math.min(mid, mid + meter.value * w / 2), y, Math.abs(meter.value) * w / 2, h);
-      tick = mid;
-    }
+    ctx.fillStyle = meter.hot ? '#f2711c' : '#f8d32b';
+    ctx.fillRect(x, y, w * meter.level, h);
+    const tick = x + w * meter.threshold;
     ctx.fillStyle = INK;
     ctx.fillRect(tick - 1, y - 3, 2, h + 6);
   }

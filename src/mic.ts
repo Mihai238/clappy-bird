@@ -13,7 +13,6 @@ export class Microphone {
   private readonly buf = new Float32Array(1024);
 
   constructor(
-    private readonly enabled: () => boolean,
     private readonly threshold: () => number,
     private readonly onClap: () => void,
   ) {}
@@ -43,7 +42,7 @@ export class Microphone {
     if (!this.analyser) return;
     this.analyser.getFloatTimeDomainData(this.buf);
     this.level = rmsDb(this.buf);
-    if (this.enabled() && this.claps.feed(this.level, this.threshold(), performance.now())) this.onClap();
+    if (this.claps.feed(this.level, this.threshold(), performance.now())) this.onClap();
   }
 
   private async open(): Promise<MicStatus> {

@@ -1,38 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createFlickDetector, createVoiceDetector } from './detector.ts';
+import { createVoiceDetector } from './detector.ts';
 
 type Sample = [value: number, ms: number];
 const triggers = (feed: (v: number, now: number) => boolean, samples: Sample[]) =>
   samples.filter(([v, ms]) => feed(v, ms)).map(([, ms]) => ms);
-
-describe('flick detector', () => {
-  const THR = 12;
-  const run = (samples: Sample[]) => {
-    const d = createFlickDetector();
-    return triggers((v, now) => d.feed(v, THR, now), samples);
-  };
-
-  it('flaps once for a single spike', () => {
-    expect(run([[2, 0], [15, 16], [2, 32]])).toEqual([16]);
-  });
-
-  it('ignores the stopping spike at the end of a flick', () => {
-    expect(run([[15, 0], [3, 60], [14, 110], [2, 140], [14, 200]])).toEqual([0]);
-  });
-
-  it('flaps for two flicks that settle in between', () => {
-    expect(run([[15, 0], [2, 150], [15, 400]])).toEqual([0, 400]);
-  });
-
-  it('flaps once while the phone keeps shaking above the threshold', () => {
-    const shaking: Sample[] = Array.from({ length: 60 }, (_, i) => [15, i * 16]);
-    expect(run(shaking)).toEqual([0]);
-  });
-
-  it('stays disarmed until the signal drops well below the threshold', () => {
-    expect(run([[15, 0], [8, 200], [8, 600], [15, 1000]])).toEqual([0]);
-  });
-});
 
 describe('voice detector', () => {
   const THR = -32;

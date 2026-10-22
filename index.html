@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#4ec0ca">
-<title>Tilt Bird</title>
+<title>Clappy Bird</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/src/style.css">
 </head>
@@ -12,28 +12,15 @@
 <canvas id="game"></canvas>
 
 <div id="menu" class="panel">
-  <h1>Tilt Bird</h1>
-  <div class="modes" role="radiogroup" aria-label="Control mode">
-    <label><input type="radio" name="mode" id="mode-flick" value="flick">Flick<small>jerk the phone</small></label>
-    <label><input type="radio" name="mode" id="mode-tilt" value="tilt">Tilt<small>steer up &amp; down</small></label>
-    <label><input type="radio" name="mode" id="mode-voice" value="voice">Voice<small>clap or shout</small></label>
-  </div>
-  <p id="mode-help"></p>
-  <div class="row" id="row-sens">
-    <label for="sens">Sensitivity</label>
-    <input type="range" id="sens" min="1" max="10" step="1">
-  </div>
-  <div class="row" id="row-micsens">
+  <h1>Clappy Bird</h1>
+  <p>Make a short, sharp sound to flap: a clap, a shouted "pah!" or a whistle. Each sound flaps once, so let it stop before the next.</p>
+  <div class="row">
     <label for="micsens">Mic sensitivity</label>
     <input type="range" id="micsens" min="1" max="10" step="1">
   </div>
-  <div class="row" id="row-invert">
-    <input type="checkbox" id="invert">
-    <label for="invert">Invert tilt</label>
-  </div>
   <button id="start">Start</button>
   <div class="status" id="status"></div>
-  <p>Lock screen rotation in portrait. Tap or Space also flaps; on a computer, use the arrow keys in Tilt mode.</p>
+  <p>Lock screen rotation in portrait. Tap or Space also flaps.</p>
 </div>
 
 <div id="over" class="panel" hidden>
@@ -44,7 +31,7 @@
   </div>
   <div class="actions">
     <button id="again">Play again</button>
-    <button id="settings" class="secondary">Change controls</button>
+    <button id="settings" class="secondary">Mic settings</button>
   </div>
 </div>
 

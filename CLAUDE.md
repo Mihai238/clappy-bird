@@ -1,16 +1,16 @@
-# Tilt Bird
+# Clappy Bird
 
-Flappy Bird controlled by the phone: a flick flaps, tilt steers, or a sound flaps. TypeScript + Vite, no runtime dependencies, a canvas game.
+Flappy Bird played with your voice: each clap or short shout flaps. TypeScript + Vite, no runtime dependencies, a canvas game.
 
-- `src/logic/`: pure functions (spike detectors, motion and loudness maths, tilt, physics). No DOM, all unit-tested.
-- `src/game.ts`: the game state machine. It reads input through the `Controls` interface, so it runs in tests without a browser.
-- `src/sensors.ts`, `src/mic.ts`: device motion and microphone input. `src/render.ts`: canvas drawing. `src/main.ts`: wiring, menu and the frame loop.
+- `src/logic/`: pure functions (spike detector, loudness maths, physics). No DOM, all unit-tested.
+- `src/game.ts`: the game state machine. It has no DOM access, so it runs in tests without a browser.
+- `src/mic.ts`: microphone input. `src/render.ts`: canvas drawing. `src/main.ts`: wiring, menu and the frame loop.
 - `index.html` holds the menu markup; `src/style.css` the styles.
 
 ## Running locally
 
-- On a phone: `npm run phone`, then open the printed `Network` address. It serves over HTTPS with a self-signed certificate, because phones only expose motion sensors and the microphone to `https` pages.
-- In a desktop browser (for browser testing), see the `browser-test` skill. Tap/Space flaps and the arrow keys steer in Tilt mode, so everything but the sensors can be checked there.
+- On a phone: `npm run phone`, then open the printed `Network` address. It serves over HTTPS with a self-signed certificate, because phones only expose the microphone to `https` pages.
+- In a desktop browser (for browser testing), see the `browser-test` skill. Tap/Space flaps, so everything but real sounds can be checked there.
 - Never commit `.cert/`, `node_modules/` or `dist/`.
 
 ## Deploying
@@ -42,7 +42,7 @@ Every push to `main` runs `.github/workflows/deploy.yml`: tests, build, then dep
 
 - `npm test` runs the Vitest suite (`src/**/*.test.ts`) and `npm run typecheck` the type check. Run both before committing. Put new game logic in `src/logic/` or `Game` so it can be tested, and add tests with it.
 - Unit tests don't prove the screen. Also verify a change in a real browser with the `browser-test` skill, and report it as working only because the browser showed it, never because the code looks right.
-- Motion controls can't be verified on a desktop. Say so, and ask the user to check them on a phone.
+- Real claps and shouts can't be verified on a desktop. Say so, and ask the user to check them on a phone.
 
 ## Working with agents
 
@@ -54,4 +54,4 @@ Every push to `main` runs `.github/workflows/deploy.yml`: tests, build, then dep
 ## Commits
 
 - Keep the message to a single line saying what changed. No description body, no bullet lists, and no tool attribution trailers such as `Co-Authored-By`.
-- Prefix with the area when there is an obvious one (`game:`, `serve:`, `docs:`, `misc:`): `game: widen the pipe gap in Tilt mode`.
+- Prefix with the area when there is an obvious one (`game:`, `serve:`, `docs:`, `misc:`): `game: widen the pipe gap`.

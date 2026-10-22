@@ -1,8 +1,6 @@
 import { clamp } from './logic/math.ts';
-import { FLAP_V, GAP, GRAVITY, MAX_FALL, PIPE_W, SPACING, SPEED, TILT_V, circleHitsRect, nextPipeTop } from './logic/physics.ts';
-import { neutralFrom } from './logic/tilt.ts';
+import { FLAP_V, GAP, GRAVITY, MAX_FALL, PIPE_W, SPACING, SPEED, circleHitsRect, nextPipeTop } from './logic/physics.ts';
 
-export type Mode = 'flick' | 'tilt' | 'voice';
 export type State = 'menu' | 'ready' | 'play' | 'dying' | 'over';
 
 export interface Pipe {
@@ -11,19 +9,12 @@ export interface Pipe {
   passed: boolean;
 }
 
-export interface Controls {
-  readonly mode: Mode;
-  readonly beta: number | null;
-  tilt(neutral: number | null): number;
-}
-
 export interface GameEvents {
   onDie(score: number): void;
   onOver(score: number): void;
 }
 
 export const WIDTH = 360;
-const TILT_COUNTDOWN = 2;
 const DEATH_PAUSE = 0.7;
 
 export class Game {
@@ -33,24 +24,16 @@ export class Game {
   pipes: Pipe[] = [];
   score = 0;
   state: State = 'menu';
-  readyT = 0;
   flash = 0;
   t = 0;
   groundX = 0;
   cloudX = 0;
-  private _neutral: number | null = null;
-  private betaSamples: number[] = [];
   private overTimer = 0;
 
   constructor(
-    private readonly controls: Controls,
     private readonly events: GameEvents,
     private readonly random: () => number = Math.random,
   ) {}
-
-  get neutral(): number | null {
-    return this._neutral;
-  }
 
   resize(height: number): void {
     this.height = height;
@@ -64,8 +47,6 @@ export class Game {
     this.pipes = [];
     this.score = 0;
     this.flash = 0;
-    this.betaSamples = [];
-    this.readyT = this.controls.mode === 'tilt' ? TILT_COUNTDOWN : 0;
     this.state = 'ready';
   }
 
@@ -75,7 +56,7 @@ export class Game {
   }
 
   flap(): void {
-    if (this.state === 'ready' && this.controls.mode !== 'tilt') this.startPlay();
+    if (this.state === 'ready') this.startPlay();
     if (this.state !== 'play') return;
     this.bird.vy = FLAP_V;
     this.bird.wing = 1;
@@ -95,27 +76,12 @@ export class Game {
     if (this.state === 'menu' || this.state === 'ready') {
       bird.y = this.height * 0.42 + Math.sin(this.t * 5) * 6;
       bird.rot = 0;
-      if (this.state === 'ready' && this.controls.mode === 'tilt') {
-        // Average the phone's angle during the countdown and treat it as level.
-        if (this.controls.beta != null) this.betaSamples.push(this.controls.beta);
-        this.readyT -= dt;
-        if (this.readyT <= 0) {
-          this._neutral = neutralFrom(this.betaSamples);
-          this.startPlay();
-        }
-      }
       return;
     }
 
     if (this.state === 'play') {
-      if (this.controls.mode === 'tilt') {
-        const target = -this.controls.tilt(this._neutral) * TILT_V;
-        bird.vy += (target - bird.vy) * Math.min(1, dt * 5);
-        bird.rot = clamp(bird.vy / 700, -0.5, 0.6);
-      } else {
-        bird.vy = Math.min(bird.vy + GRAVITY * dt, MAX_FALL);
-        bird.rot = clamp(bird.vy / 600, -0.45, 1.3);
-      }
+      bird.vy = Math.min(bird.vy + GRAVITY * dt, MAX_FALL);
+      bird.rot = clamp(bird.vy / 600, -0.45, 1.3);
       bird.y += bird.vy * dt;
       if (bird.y < bird.r) {
         bird.y = bird.r;

@@ -2,7 +2,6 @@ import { clamp } from './math.ts';
 
 export const GRAVITY = 1500, FLAP_V = -430, MAX_FALL = 620;
 export const SPEED = 140, GAP = 158, PIPE_W = 62, SPACING = 215;
-export const TILT_V = 380;
 
 const PIPE_MARGIN = 64;
 const MAX_GAP_SHIFT = 170;

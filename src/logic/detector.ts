@@ -26,11 +26,6 @@ export function createSpikeDetector({ rearmLevel, rearmAfterMs, cooldownMs }: Sp
   };
 }
 
-// One flick = one flap. The stop at the end of a flick makes a second spike,
-// so wait for the signal to settle and enforce a short cooldown.
-export const createFlickDetector = () =>
-  createSpikeDetector({ rearmLevel: thr => thr * 0.45, rearmAfterMs: 120, cooldownMs: 300 });
-
 // One sound = one flap: a held "aaah" has to die down before the next flap.
 export const createVoiceDetector = () =>
   createSpikeDetector({ rearmLevel: thr => thr - 8, rearmAfterMs: 0, cooldownMs: 150 });
