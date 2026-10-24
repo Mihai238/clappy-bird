@@ -15,7 +15,7 @@ Flappy Bird played with your voice: each clap or short shout flaps. TypeScript +
 
 ## Deploying
 
-Every push to `main` runs `.github/workflows/deploy.yml`: tests, build, then deploy to GitHub Pages. A failing test blocks the deploy. Asset paths are relative (`base: './'` in `vite.config.ts`) because Pages serves the game under `/flappy-bird/`.
+Every push to `main` runs `.github/workflows/deploy.yml`: tests, build, then deploy to GitHub Pages. A failing test blocks the deploy. Asset paths are relative (`base: './'` in `vite.config.ts`) because Pages serves the game under `/clappy-bird/`.
 
 ## Coding style
 

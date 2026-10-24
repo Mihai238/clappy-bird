@@ -2,7 +2,7 @@
 
 Flappy Bird played with your voice instead of tapping.
 
-**Play:** https://mihai238.github.io/flappy-bird/ (open it on your phone)
+**Play:** https://mihai238.github.io/clappy-bird/ (open it on your phone)
 
 ## Controls
 
